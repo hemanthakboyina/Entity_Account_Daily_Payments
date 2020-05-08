@@ -1,4 +1,4 @@
-package com.example;
+package com.reducer;
 
 import org.apache.kafka.streams.kstream.Reducer;
 

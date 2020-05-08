@@ -1,4 +1,4 @@
-package com.example;
+package com.mapper;
 
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.kstream.KeyValueMapper;

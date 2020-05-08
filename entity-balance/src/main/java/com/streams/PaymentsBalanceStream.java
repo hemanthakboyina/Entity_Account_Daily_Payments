@@ -1,10 +1,11 @@
-package com.example;
+package com.streams;
 
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KafkaStreams;
+import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.Topology;
@@ -14,12 +15,19 @@ import org.apache.kafka.streams.kstream.KGroupedStream;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.KTable;
 
-public class EntityBalanceStream {
+import com.mapper.PaymentsParseMapper;
+import com.mapper.ValuedateParseMapper;
+import com.reducer.DateWiseBalanceReducer;
+
+import io.confluent.kafka.streams.serdes.avro.GenericAvroSerde;
+import joptsimple.util.KeyValuePair;
+
+public class PaymentsBalanceStream {
 
 	public static void main(String[] args) {
 
 		Properties props = new Properties();
-		props.put(StreamsConfig.APPLICATION_ID_CONFIG, "entity4");
+		props.put(StreamsConfig.APPLICATION_ID_CONFIG, "payments7");
 		props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "http://192.168.0.105:9092");
 		props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass());
 		props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
@@ -28,30 +36,27 @@ public class EntityBalanceStream {
 
 		KStream<String, String> paymentsStream = builder.stream("payments");
 
-		GlobalKTable<String, String> accountGlobalTable = builder.globalTable("accountlookup");
+		KStream<String, Long> paymentStreamParsed = paymentsStream.map(new
+		 PaymentsParseMapper());
 
-		KStream<String, String> entityBalanceJoined = paymentsStream.join(accountGlobalTable, (key, value) -> key,
-				(payments, accountInfo) -> payments + ":" + accountInfo);
+		 KGroupedStream<String, Long> paymentGroupedStream =  paymentStreamParsed.groupByKey(Grouped.with(
+       	      Serdes.String(), /* key */
+       	      Serdes.Long()) );
+		KTable<String, Long> accountBalanceDate = paymentGroupedStream.reduce(new DateWiseBalanceReducer());
 
-		KStream<String, Long> entityBalanceJoinParsed = entityBalanceJoined.map(new JoinTransactionParseMapper());
+		
+		KStream<String, Long> accountBalanceDateStream = accountBalanceDate.toStream();
+		
+		KStream<String, String> accountBalanceDateMapValues = accountBalanceDateStream.mapValues(value -> String.valueOf(value));
+		
+		KStream<String, String> accountBalanceDateParsed = accountBalanceDateMapValues.map(new
+				 ValuedateParseMapper());
+		
+		accountBalanceDateParsed.to("AccountDailyPayments");
 
-		KGroupedStream<String, Long> entityBalanceGroupedStream = entityBalanceJoinParsed
-				.groupByKey(Grouped.with(Serdes.String(), /* key */
-						Serdes.Long()));
-		KTable<String, Long> entityBalance = entityBalanceGroupedStream.reduce(new EntityWiseBalanceReducer());
+		accountBalanceDateParsed.foreach((key, value) -> System.out.println(key + " " + value));
 		
-		KStream<String, Long> entituBalanceDateStream = entityBalance.toStream();
 		
-		KStream<String, String> entituBalanceDateStringValue = entituBalanceDateStream.mapValues(value -> String.valueOf(value));
-		
-		KStream<String, String> entityBalanceDateParsed = entituBalanceDateStringValue.map(new
-				 EntityValuedateParseMapper());
-		
-		entityBalanceDateParsed.to("EntityDailyPayments");
-		
-		entityBalanceDateParsed.foreach((key, value) -> System.out.println(key + " " + value));
-		
-			
 		 
 		final Topology topology = builder.build();
 
@@ -78,6 +83,6 @@ public class EntityBalanceStream {
 		}
 		System.exit(0);
 
-		
 	}
+
 }
